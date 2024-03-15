@@ -71,11 +71,51 @@ class Classifier(nn.Module):
         x = torch.relu(self.fc0(x))
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        return x```
+        return x
+```
 - **Фиче инжиниринг:** Применен для улучшения производительности моделей.
+```python
+categorical_features = [col for col in df.columns[1:] if df[col].nunique() < 20]
+numerical_features = [col for col in df.columns[1:] if df[col].nunique() >= 20]
+# Метод Label Encoding
+for feature in categorical_features:
+    df[feature + '_label_encoded'] = df[feature].astype('category').cat.codes
+
+# Метод One-Hot Encoding
+encoder = OneHotEncoder(sparse=False, handle_unknown='ignore')
+encoded_features = pd.DataFrame(encoder.fit_transform(df[categorical_features]))
+encoded_features.columns = encoder.get_feature_names_out(categorical_features)
+
+df = pd.concat([df, encoded_features], axis=1)
+```
 - **Препроцессинг:** Использован для обработки данных с учетом разреженности данных, выбросов и улучшения точности предсказаний.
+```python
+# Применение всех методов масштабирования
+scalers = {
+    #"StandardScaler": StandardScaler(),
+    #"MinMaxScaler": MinMaxScaler(),
+    "RobustScaler": RobustScaler(),
+    #"Normalizer": Normalizer(),
+    #"MaxAbsScaler": MaxAbsScaler(),
+}
+
+scaled_dfs = []
+
+for scaler_name, scaler in tqdm(scalers.items()):
+    scaled_data = scaler.fit_transform(df[numerical_features])
+    scaled_df = pd.DataFrame(scaled_data, columns=[f"{feature}_{scaler_name}" for feature in numerical_features])
+    scaled_dfs.append((scaler_name, scaled_df))
+    
+# Объединение результатов
+df = pd.concat([df] + [scaled_df for _, scaled_df in scaled_dfs], axis=1)
+```
 - **Количество признаков:** Исходные данные содержали более 1000 признаков, в результате фиче инжиниринга получено более 4000 признаков.
 - **Voting ансамбль:** Использован для объединения прогнозов различных моделей.
+```python
+  from sklearn.ensemble import VotingClassifier
+voting_classifier = VotingClassifier(estimators=[('catboost', model_catboost), ('xgboost', model_xgboost)], voting='soft')
+voting_classifier.fit(X_train, y_train)
+```
 - **CatBoost и XGBoost:** Популярные библиотеки градиентного бустинга, применяемые для построения моделей.
 
 **Проблемы и решения 🛠️:**
@@ -83,9 +123,68 @@ class Classifier(nn.Module):
 - **Выбросы:** Необходимо принимать меры для обнаружения и обработки выбросов в данных.
 - **Низкая точность наивных предсказаний:** Модели должны быть настроены и оптимизированы для достижения высокой точности предсказаний.
 
+
 **Отбор признаков 🔍:**
 - Код для отбора признаков будет предоставлен в репозитории проекта для обеспечения прозрачности и воспроизводимости результатов.
+```python
+from sklearn.ensemble import IsolationForest
 
+isolation_forest = IsolationForest(n_estimators=10000, 
+                                   contamination=0.05, 
+                                   #max_features=1, 
+                                   #bootstrap=True
+                                  )
+isolation_forest.fit(X_train.values)
+
+isolation_predict = isolation_forest.predict(X_train.values)
+anomalies = np.where(isolation_predict < 0, True, False)
+display(anomalies_report(anomalies))
+data_without_outliers = np.where(isolation_predict != -1)
+Train_without_anomalies = X_train.iloc[data_without_outliers[0]]
+Train_without_anomalies.head()
+```
+- **permutation importance:** Вычисления важности признаков в моделях машинного обучения.
+```python
+from sklearn.inspection import permutation_importance
+scoring = 'roc_auc'
+r = permutation_importance(model, X_test, y_test,
+                           n_repeats=20,
+                           random_state=0,scoring = scoring)
+for i in r.importances_mean.argsort()[::-1]:
+    if r.importances_mean[i] - 2 * r.importances_std[i] > 0:
+        print(f"{X_test.columns[i]:<8}"
+              f"{r.importances_mean[i]:.3f}"
+              f" +/- {r.importances_std[i]:.3f}")
+```
+- **RecursiveByShapValues**:
+```python
+def shapley_feature_ranking(explanation,func = np.mean):
+    '''
+    func по умолчанию np.mean, но можно заменить например на np.max
+    '''
+    feature_order = np.argsort(func(np.abs(explanation.values), axis=0))
+    
+    return pd.DataFrame(
+        {
+            "features": [explanation.feature_names[i] for i in feature_order][::-1],
+            "importance": [
+                func(np.abs(explanation.values), axis=0)[i] for i in feature_order
+            ][::-1],
+        }
+    )
+
+
+feature_names = X_train.columns
+
+shap_values = explainer.shap_values(Pool(X_test, y_test, cat_features=cat_feature_names))
+
+base_values = np.mean(shap_values)
+
+explanation = shap.Explanation(values=shap_values, data=X_test, feature_names=feature_names, base_values=base_values)
+
+important_feature = shapley_feature_ranking(explanation)
+plt.show(important_feature.head(10))
+```
 
 **Результаты и обсуждение 💡:**
 - Исследован ряд моделей и подходов к прогнозированию оттока зарплатных клиентов ФЛ в Сбере.
@@ -94,4 +193,4 @@ class Classifier(nn.Module):
 - Решены проблемы с разреженностью данных, выбросами и низкой точностью предсказаний.
 - Репозиторий содержит подробную документацию, включая код для отбора признаков и описания примененных методов.
 
-Решение: Sber.ipynb
+Решение: sber.ipynb
