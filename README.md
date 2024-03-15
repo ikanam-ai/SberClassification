@@ -126,23 +126,6 @@ voting_classifier.fit(X_train, y_train)
 
 **Отбор признаков 🔍:**
 - Код для отбора признаков будет предоставлен в репозитории проекта для обеспечения прозрачности и воспроизводимости результатов.
-```python
-from sklearn.ensemble import IsolationForest
-
-isolation_forest = IsolationForest(n_estimators=10000, 
-                                   contamination=0.05, 
-                                   #max_features=1, 
-                                   #bootstrap=True
-                                  )
-isolation_forest.fit(X_train.values)
-
-isolation_predict = isolation_forest.predict(X_train.values)
-anomalies = np.where(isolation_predict < 0, True, False)
-display(anomalies_report(anomalies))
-data_without_outliers = np.where(isolation_predict != -1)
-Train_without_anomalies = X_train.iloc[data_without_outliers[0]]
-Train_without_anomalies.head()
-```
 - **permutation importance:** Вычисления важности признаков в моделях машинного обучения.
 ```python
 from sklearn.inspection import permutation_importance
@@ -158,6 +141,22 @@ for i in r.importances_mean.argsort()[::-1]:
 ```
 - **RecursiveByShapValues**:
 ```python
+
+clf.select_features(
+                train_pool,
+                eval_set=test_pool,
+                features_for_select = list(X_train.columns),
+                num_features_to_select=500,
+                steps=10,
+                algorithm='RecursiveByShapValues',
+                shap_calc_type='Regular',
+                train_final_model=True,
+                plot=False,
+                verbose = 1000)
+```
+- **shapley_feature_ranking**:
+```python
+
 def shapley_feature_ranking(explanation,func = np.mean):
     '''
     func по умолчанию np.mean, но можно заменить например на np.max
